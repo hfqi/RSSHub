@@ -1,4 +1,4 @@
-import { Route } from '@/types';
+import { Route, ViewType } from '@/types';
 import cache from '@/utils/cache';
 import querystring from 'querystring';
 import got from '@/utils/got';
@@ -11,6 +11,7 @@ import { fallback, queryToBoolean } from '@/utils/readable-social';
 export const route: Route = {
     path: '/user/:uid/:routeParams?',
     categories: ['social-media', 'popular'],
+    view: ViewType.SocialMedia,
     example: '/weibo/user/1195230310',
     parameters: { uid: '用户 id, 博主主页打开控制台执行 `$CONFIG.oid` 获取', routeParams: '额外参数；请参阅上面的说明和表格；特别地，当 `routeParams=1` 时开启微博视频显示' },
     features: {
@@ -29,7 +30,7 @@ export const route: Route = {
     },
     radar: [
         {
-            source: ['m.weibo.cn/u/:uid', 'm.weibo.cn/profile/:uid', 'www.weibo.com/u/:uid'],
+            source: ['m.weibo.cn/u/:uid', 'm.weibo.cn/profile/:uid', 'weibo.com/u/:uid', 'www.weibo.com/u/:uid'],
             target: '/user/:uid',
         },
     ],
@@ -46,6 +47,7 @@ async function handler(ctx) {
     let displayVideo = '1';
     let displayArticle = '0';
     let displayComments = '0';
+    let showRetweeted = '1';
     if (ctx.req.param('routeParams')) {
         if (ctx.req.param('routeParams') === '1' || ctx.req.param('routeParams') === '0') {
             displayVideo = ctx.req.param('routeParams');
@@ -54,6 +56,7 @@ async function handler(ctx) {
             displayVideo = fallback(undefined, queryToBoolean(routeParams.displayVideo), true) ? '1' : '0';
             displayArticle = fallback(undefined, queryToBoolean(routeParams.displayArticle), false) ? '1' : '0';
             displayComments = fallback(undefined, queryToBoolean(routeParams.displayComments), false) ? '1' : '0';
+            showRetweeted = fallback(undefined, queryToBoolean(routeParams.showRetweeted), false) ? '1' : '0';
         }
     }
     const containerData = await cache.tryGet(
@@ -101,7 +104,15 @@ async function handler(ctx) {
 
     let resultItems = await Promise.all(
         cards
-            .filter((item) => item.mblog)
+            .filter((item) => {
+                if (item.mblog === undefined) {
+                    return false;
+                }
+                if (showRetweeted === '0' && item.mblog.retweeted_status) {
+                    return false;
+                }
+                return true;
+            })
             .map(async (item) => {
                 // TODO: unify cache key and let weiboUtils.getShowData() handle the cache? It seems safe to do so.
                 //       Need more investigation, pending for now since the current version works fine.
@@ -179,5 +190,6 @@ async function handler(ctx) {
         description,
         image: profileImageUrl,
         item: resultItems,
+        allowEmpty: true,
     });
 }
